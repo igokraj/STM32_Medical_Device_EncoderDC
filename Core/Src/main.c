@@ -46,8 +46,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-uint32_t uwDirection = 0;
-int32_t  iCount = 0;
+volatile uint32_t uwDirection = 0;
+volatile int32_t  iCount = 0;
+volatile float rpm = 0.0f;
+static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,17 +102,15 @@ int main(void)
   /* Start the encoder interface */
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
 
+  /* Start TIM6 in interrupt mode */
+  HAL_TIM_Base_Start_IT(&htim6);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-    /* Get the current direction and position */
-    uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
-    iCount = (int32_t)__HAL_TIM_GET_COUNTER(&htim2) / 4;
-    HAL_Delay(50);
 
     /* USER CODE END WHILE */
 
@@ -167,7 +167,25 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+#define COUNTS_PER_REV_OUTPUT   1920.0f   //  64 CPR x 30:1 gearbox Pololu datasheet
+#define SAMPLE_TIME_S           0.01f     // 100 Hz from TIM6 -> 0,01 s
 
+
+// TIM6 callback (100 Hz) - computes direction, position and motor RPM
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+if (htim->Instance == TIM6) {
+
+  uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
+  iCount = (int32_t)__HAL_TIM_GET_COUNTER(&htim2) / 4;
+
+  int32_t delta = iCount - prevCount;
+  prevCount = iCount;
+
+  rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
+}
+
+}
 /* USER CODE END 4 */
 
 /**
