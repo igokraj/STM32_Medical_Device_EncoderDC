@@ -50,6 +50,35 @@ volatile uint32_t uwDirection = 0;
 volatile int32_t  iCount = 0;
 volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
+
+typedef enum {
+  IDLE,
+  RUNNING,
+  E_STOP
+} SystemStatus_t;
+
+volatile SystemStatus_t systemStatus = IDLE;
+
+typedef enum {
+  EDIT_SPEED,
+  EDIT_TIME
+} EditMode_t;
+
+volatile EditMode_t     editMode    = EDIT_SPEED;
+
+// Desired DC motor speed
+volatile int16_t        targetRPM   = 0;
+// Desired DC motor work time in a single task
+volatile int16_t        targetTimeSec = 0;
+
+#define MAX_DC_SPEED 330 // Pololu 4752 dataSheet: Rotational speed at 12 V power supply: 330 rpm
+
+
+
+
+
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -167,9 +196,57 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+// *** THE CODE BELOW IS USED TO HANDLE 3 BUTTONS (+/- and switch button) IN ISR ***
+typedef struct {
+  GPIO_TypeDef *port;
+  uint16_t      pin;
+  GPIO_PinState stableState;
+  uint8_t       counter;
+} Button_t;
+
+#define DEBOUNCE_TICKS  3   // 3 x 10ms (tick TIM6) = 30ms
+
+static Button_t btnPlus   = { Button_B6_GPIO_Port,     Button_B6_Pin,     GPIO_PIN_SET, 0 };
+static Button_t btnMinus  = { Button__GPIO_Port,       Button__Pin,       GPIO_PIN_SET, 0 };
+static Button_t btnSwitch = { Switch_Button_GPIO_Port, Switch_Button_Pin, GPIO_PIN_SET, 0 };
+
+/* Returns 1 on a debounced press event (falling edge), else 0 */
+static uint8_t Button_Update(Button_t *btn)
+{
+  GPIO_PinState raw = HAL_GPIO_ReadPin(btn->port, btn->pin);
+
+  // If the reading is the same as last confirmed state, nothing is happening
+  if (raw == btn->stableState)
+  {
+    btn->counter = 0;
+    return 0;
+  }
+
+  // The reading is different - it might be a real press, or just bouncing
+  btn->counter = btn->counter + 1;
+
+  // Wait until the new reading has been stable for DEBOUNCE_TICKS in a row
+  if (btn->counter >= DEBOUNCE_TICKS)
+  {
+    btn->stableState = raw;
+    btn->counter = 0;
+
+    // Only report an event when the button became PRESSED (pin reads LOW)
+    if (raw == GPIO_PIN_RESET)
+    {
+      return 1;
+    }
+    else
+    {
+      return 0;
+    }
+  }
+  // Not stable long enough yet
+  return 0;
+}
+
 #define COUNTS_PER_REV_OUTPUT   1920.0f   //  64 CPR x 30:1 gearbox Pololu datasheet
 #define SAMPLE_TIME_S           0.01f     // 100 Hz from TIM6 -> 0,01 s
-
 
 // TIM6 callback (100 Hz) - computes direction, position and motor RPM
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -185,7 +262,75 @@ if (htim->Instance == TIM6) {
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
 }
 
+// **** BUTTONS HANDLE **** 
+
+
+// Enable the change of the parameters only if the system is in IDLE
+if (systemStatus == IDLE) { 
+// Change of the edit mode with switch_button
+if (Button_Update(&btnSwitch)) {
+  editMode = (editMode == EDIT_SPEED) ? EDIT_TIME : EDIT_SPEED;
 }
+// Change of the rpm and work time with Button+ and Button-
+if (Button_Update(&btnPlus)) {
+  if (editMode == EDIT_SPEED) {
+    if (targetRPM < 330) {
+    targetRPM += 10;
+    }
+  }
+ else {
+  if (targetTimeSec < 3600) {
+    targetTimeSec += 10;
+  }
+}
+}
+if (Button_Update(&btnMinus)) {
+  if (editMode == EDIT_SPEED) {
+    if (targetRPM >= 10) {
+      targetRPM -= 10;
+    }
+  }
+  else {
+    if (targetTimeSec >= 10) {
+      targetTimeSec -= 10;
+    }
+  }
+}
+}
+}
+
+// This funtion in ISR is used to start of stop the system (and to handle the state machine)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  static uint32_t last_press = 0;
+
+  if (GPIO_Pin == Start_Button_Pin) {
+
+    uint32_t now = HAL_GetTick();
+    if (now - last_press < 200) return;
+    last_press = now;
+
+    // Pressing the button stops the system if it is RUNNING state
+    if (systemStatus == RUNNING) {
+      systemStatus = E_STOP;
+    }
+    // Pressing the button starts the system if it is in IDLE state
+    else if (systemStatus == IDLE) {
+      systemStatus = RUNNING;
+    }
+    else {
+      // Require a separate press to leave E_STOP - won't jump straight back to RUNNING
+      systemStatus = IDLE;
+    }
+  }
+}
+
+
+
+
+
+
+
 /* USER CODE END 4 */
 
 /**
