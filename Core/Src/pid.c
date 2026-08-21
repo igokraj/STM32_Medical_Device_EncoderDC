@@ -1,4 +1,11 @@
-// **** THIS CODE IS USED TO HANDLE PID ****
+// **** THIS CODE IS USED TO HANDLE PID, LOGIC BELOW****
+
+
+/* Flow (called every 10ms from TIM6, only while systemStatus == RUNNING):
+1. Ramp_Update()  -> moves rampedSetpoint towards targetRPM, one small step at a time
+2. PID_Compute()  -> compares rampedSetpoint (goal for right now) with rpm (measured),turns the error into a PWM duty cycle (P + I + D)
+3. main.c writes that output to CCR1/CCR2 -> motor speeds up or slows down
+4. next tick, the new rpm is measured -> loop closes */
 
 // PID gains 
 float Kp = 8.0f;
@@ -13,12 +20,14 @@ static float prevError = 0.0f;
 
 float PID_Compute(float setpointRPM, float measuredRPM)
 {
+
 float error = setpointRPM - measuredRPM;
 
 integral += error * SAMPLE_TIME_S;
 
 // Derivative calculation
 float derivative = (error - prevError) / SAMPLE_TIME_S;
+prevError = error;
 
 /* PID output (How much power to give to the DC motor?) calculation:
 Kp * error -> reacts to the current error
@@ -40,7 +49,27 @@ else if (output < 0)
 }
 
 return output;
+}
 
+// This function allows the setpoint to ramp up smoothly (ramp), instead of jumping straight to the target
+float Ramp_Update(float current, float target, float rampRatePerSec, float dt) 
+{
+float maxStep = rampRatePerSec * dt;
 
+  if (current < target) {
+    current += maxStep;
+    // don't overshoot past the target, or we'd oscillate around it
+    if (current > target) {
+      current = target;
+    }
+  }
+  else if (current > target) {
+    current -= maxStep;
+    // same protection, going downwards
+    if (current < target) {
+      current = target;
+    }
+  }
 
+  return current;
 }

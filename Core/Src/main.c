@@ -76,6 +76,10 @@ volatile int16_t        targetTimeSec = 0;
 
 #define MAX_DC_SPEED 330 // Pololu 4752 dataSheet: Rotational speed at 12 V power supply: 330 rpm
 
+// **** PID ramp ****
+#define RAMP_RATE_RPM_PER_S   60.0f // max rate of change of the setpoint (RPM per second)
+static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_Update
+
 
 /* USER CODE END PV */
 
@@ -259,7 +263,8 @@ if (Button_Update(&btnMinus)) {
 // **** PWM HANDLE **** 
 
 if (systemStatus == RUNNING) {
-  float pidOutput = PID_Compute((float)targetRPM, rpm);
+  rampedSetpoint = Ramp_Update(rampedSetpoint, targetRPM, RAMP_RATE_RPM_PER_S, SAMPLE_TIME_S);
+  float pidOutput = PID_Compute(rampedSetpoint, rpm);
 
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
