@@ -27,6 +27,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "buttons.h"
+#include "pid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,6 +75,10 @@ volatile int16_t        targetTimeSec = 0;
 
 
 #define MAX_DC_SPEED 330 // Pololu 4752 dataSheet: Rotational speed at 12 V power supply: 330 rpm
+
+// **** PID ramp ****
+#define RAMP_RATE_RPM_PER_S   60.0f // max rate of change of the setpoint (RPM per second)
+static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_Update
 
 
 /* USER CODE END PV */
@@ -130,6 +135,10 @@ int main(void)
 
   /* Start TIM6 in interrupt mode */
   HAL_TIM_Base_Start_IT(&htim6);
+
+  /* Start PWM channels for the motor driver (IN1/IN2) */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 
   /* USER CODE END 2 */
 
@@ -201,6 +210,9 @@ void SystemClock_Config(void)
 // TIM6 callback (100 Hz) - computes direction, position and motor RPM
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+
+// **** RPM CALCULATION ****
+
 if (htim->Instance == TIM6) {
 
   uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
@@ -245,6 +257,23 @@ if (Button_Update(&btnMinus)) {
     }
   }
 }
+}
+
+
+// **** PWM HANDLE **** 
+
+if (systemStatus == RUNNING) {
+  rampedSetpoint = Ramp_Update(rampedSetpoint, targetRPM, RAMP_RATE_RPM_PER_S, SAMPLE_TIME_S);
+  float pidOutput = PID_Compute(rampedSetpoint, rpm);
+
+  if (pidOutput > 0) {
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+  }
+  else {
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);   // never reverse
+  }
 }
 }
 
