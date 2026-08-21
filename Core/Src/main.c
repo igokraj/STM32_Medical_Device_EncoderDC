@@ -27,6 +27,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "buttons.h"
+#include "pid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -131,6 +132,10 @@ int main(void)
   /* Start TIM6 in interrupt mode */
   HAL_TIM_Base_Start_IT(&htim6);
 
+  /* Start PWM channels for the motor driver (IN1/IN2) */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -201,6 +206,9 @@ void SystemClock_Config(void)
 // TIM6 callback (100 Hz) - computes direction, position and motor RPM
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+
+// **** RPM CALCULATION ****
+
 if (htim->Instance == TIM6) {
 
   uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
@@ -245,6 +253,22 @@ if (Button_Update(&btnMinus)) {
     }
   }
 }
+}
+
+
+// **** PWM HANDLE **** 
+
+if (systemStatus == RUNNING) {
+  float pidOutput = PID_Compute((float)targetRPM, rpm);
+
+  if (pidOutput > 0) {
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+  }
+  else {
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);   // never reverse
+  }
 }
 }
 
