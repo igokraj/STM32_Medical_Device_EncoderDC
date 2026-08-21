@@ -50,6 +50,21 @@ volatile uint32_t uwDirection = 0;
 volatile int32_t  iCount = 0;
 volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
+
+typedef enum {
+  IDLE,
+  RUNNING,
+  E_STOP
+} SystemStatus_t;
+
+
+volatile SystemStatus_t systemStatus = IDLE;
+
+
+
+
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -184,7 +199,34 @@ if (htim->Instance == TIM6) {
 
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
 }
+}
 
+
+
+// This funtion in ISR is used to start of stop the system (and to handle the state machine)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  static uint32_t last_press = 0;
+
+  if (GPIO_Pin == Start_Button_Pin) {
+
+    uint32_t now = HAL_GetTick();
+    if (now - last_press < 200) return;
+    last_press = now;
+
+    // Pressing the button stops the system if it is RUNNING state
+    if (systemStatus == RUNNING) {
+      systemStatus = E_STOP;
+    }
+    // Pressing the button starts the system if it is in IDLE state
+    else if (systemStatus == IDLE) {
+      systemStatus = RUNNING;
+    }
+    else {
+      // Require a separate press to leave E_STOP - won't jump straight back to RUNNING
+      systemStatus = IDLE;
+    }
+  }
 }
 /* USER CODE END 4 */
 
