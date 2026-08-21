@@ -71,6 +71,10 @@ volatile int16_t        targetRPM   = 0;
 // Desired DC motor work time in a single task
 volatile int16_t        targetTimeSec = 0;
 
+#define MAX_DC_SPEED 330 // Pololu 4752 dataSheet: Rotational speed at 12 V power supply: 330 rpm
+
+
+
 
 
 
@@ -260,6 +264,7 @@ if (htim->Instance == TIM6) {
 
 // **** BUTTONS HANDLE **** 
 
+
 // Enable the change of the parameters only if the system is in IDLE
 if (systemStatus == IDLE) { 
 // Change of the edit mode with switch_button
@@ -269,11 +274,15 @@ if (Button_Update(&btnSwitch)) {
 // Change of the rpm and work time with Button+ and Button-
 if (Button_Update(&btnPlus)) {
   if (editMode == EDIT_SPEED) {
+    if (targetRPM < 330) {
     targetRPM += 10;
+    }
   }
-  else {
+ else {
+  if (targetTimeSec < 3600) {
     targetTimeSec += 10;
   }
+}
 }
 if (Button_Update(&btnMinus)) {
   if (editMode == EDIT_SPEED) {
@@ -315,6 +324,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
   }
 }
+
 
 
 
