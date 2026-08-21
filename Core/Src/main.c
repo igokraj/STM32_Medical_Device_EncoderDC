@@ -203,6 +203,21 @@ void SystemClock_Config(void)
 #define COUNTS_PER_REV_OUTPUT   1920.0f   //  64 CPR x 30:1 gearbox Pololu datasheet
 #define SAMPLE_TIME_S           0.01f     // 100 Hz from TIM6 -> 0,01 s
 
+#define SIMULATION_MODE   // comment this line out once the real motor is connected
+
+#ifdef SIMULATION_MODE
+static float lastPidOutput = 0.0f;
+
+// Simple first-order motor model driven by the PID output, for testing without hardware
+float SimulateMotor(float pwmDuty)
+{
+  static float simRpm = 0.0f;
+  float targetPhysicalRPM = (pwmDuty / 4199.0f) * MAX_DC_SPEED;
+  simRpm += (targetPhysicalRPM - simRpm) * (SAMPLE_TIME_S / 0.3f); // time constant 0.3s
+  return simRpm;
+}
+#endif
+
 // TIM6 callback (100 Hz) - computes direction, position and motor RPM
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -211,6 +226,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 if (htim->Instance == TIM6) {
 
+#ifdef SIMULATION_MODE
+  rpm = SimulateMotor(lastPidOutput);
+#else
   uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
   iCount = (int32_t)__HAL_TIM_GET_COUNTER(&htim2) / 4;
 
@@ -218,6 +236,7 @@ if (htim->Instance == TIM6) {
   prevCount = iCount;
 
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
+#endif
 }
 
 // **** BUTTONS HANDLE **** 
@@ -260,6 +279,10 @@ if (Button_Update(&btnMinus)) {
 
 if (systemStatus == RUNNING) {
   float pidOutput = PID_Compute((float)targetRPM, rpm);
+
+#ifdef SIMULATION_MODE
+  lastPidOutput = pidOutput;
+#endif
 
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
