@@ -258,10 +258,15 @@ if (htim->Instance == TIM6) {
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
 }
 
+// **** BUTTONS HANDLE **** 
 
+// Enable the change of the parameters only if the system is in IDLE
+if (systemStatus == IDLE) { 
+// Change of the edit mode with switch_button
 if (Button_Update(&btnSwitch)) {
   editMode = (editMode == EDIT_SPEED) ? EDIT_TIME : EDIT_SPEED;
 }
+// Change of the rpm and work time with Button+ and Button-
 if (Button_Update(&btnPlus)) {
   if (editMode == EDIT_SPEED) {
     targetRPM += 10;
@@ -283,8 +288,7 @@ if (Button_Update(&btnMinus)) {
   }
 }
 }
-
-
+}
 
 // This funtion in ISR is used to start of stop the system (and to handle the state machine)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
