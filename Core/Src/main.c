@@ -28,6 +28,7 @@
 #include "buttons.h"
 #include "pid.h"
 #include "stdbool.h"
+#include "E-STOP.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -90,6 +91,7 @@ volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing
 volatile uint32_t ServoStartTick = 0; // variable for servo delay counter 
 volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait it's own delay till it is opened 
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished it's work? 
+#define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
 
 
 
@@ -244,11 +246,8 @@ lid_open = HAL_GPIO_ReadPin(Lid_Button_GPIO_Port, Lid_Button_Pin);
 
 // Set systemStatus to E-STOP and 0 the PWM signal if someone managed to open the lid while the system is RUNNING
 if (systemStatus == RUNNING && lid_open) {
-  systemStatus = E_STOP;
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
-  ServoStartTick = HAL_GetTick();
-  servoPending = 1;
+// Inicialize stop of DC motor
+TriggerEStop();
 }
 
 // **** BUTTONS HANDLE **** 
@@ -336,7 +335,12 @@ if (systemStatus == RUNNING) {
 // Wait for the set time before opening the lock
 if (servoPending) {
   uint32_t now = HAL_GetTick();
-  if (now - ServoStartTick >= SERVO_OPEN_DELAY && rpm < 1.0f && rpm > -1.0f) {
+  bool timedOut = (now - ServoStartTick >= SERVO_MAX_WAIT); 
+  bool motorStopped = (rpm < 1.0f && rpm > -1.0f);
+
+/* Open once the minimum delay has passed AND && either the motor is confirmed stopped, or the max wait timed out (this is an extra protection in case rpm never settles, e.g. sensor noise) */
+  if (now - ServoStartTick >= SERVO_OPEN_DELAY && (motorStopped || timedOut)) {
+
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
     /* PSC=27, ARR=59999
     tick = 28 / 84 000 000 ≈ 0,333 µs
@@ -364,12 +368,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
     // Pressing the button stops the system if it is RUNNING state
     if (systemStatus == RUNNING) {
-      systemStatus = E_STOP;
-    // E-STOP needs to zero the PWM signal  
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
-    ServoStartTick = HAL_GetTick();
-    servoPending = 1;
+    // Inicialize stop of DC motor
+    TriggerEStop();
     }
     // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also lock the machine with servo
     else if (systemStatus == IDLE) {
