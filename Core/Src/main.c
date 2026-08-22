@@ -80,6 +80,9 @@ volatile int16_t        targetTimeSec = 0;
 #define RAMP_RATE_RPM_PER_S   60.0f // max rate of change of the setpoint (RPM per second)
 static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_Update
 
+static uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
+volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing down to 0 rpm
+
 
 /* USER CODE END PV */
 
@@ -228,6 +231,7 @@ if (htim->Instance == TIM6) {
 
 // Enable the change of the parameters only if the system is in IDLE
 if (systemStatus == IDLE) { 
+
 // Change of the edit mode with switch_button
 if (Button_Update(&btnSwitch)) {
   editMode = (editMode == EDIT_SPEED) ? EDIT_TIME : EDIT_SPEED;
@@ -263,9 +267,26 @@ if (Button_Update(&btnMinus)) {
 // **** PWM HANDLE **** 
 
 if (systemStatus == RUNNING) {
-  rampedSetpoint = Ramp_Update(rampedSetpoint, targetRPM, RAMP_RATE_RPM_PER_S, SAMPLE_TIME_S);
+
+  // Check if the configured run time has elapsed, and if so, start the smooth stop
+  if (!stopping && targetTimeSec > 0) {
+    uint32_t elapsedSec = (HAL_GetTick() - runStartTick) / 1000;
+    if (elapsedSec >= (uint32_t)targetTimeSec) {
+      stopping = 1;
+    }
+  }
+  float effectiveTarget = stopping ? 0.0f : (float)targetRPM;
+
+  // Move the setpoint gradually, smoothly towards effectiveTarget instead of step change
+  rampedSetpoint = Ramp_Update(rampedSetpoint, effectiveTarget, RAMP_RATE_RPM_PER_S, SAMPLE_TIME_S);
+  // Compare the rampedSetpoint (goal for right now) with the actual measured speed
   float pidOutput = PID_Compute(rampedSetpoint, rpm);
 
+
+/* Check systemStatus again right before writing to CCR - if EXTI (higher priority
+   than this callback) just fired and switched to E_STOP, it already zeroed CCR;
+   this re-check prevents the write below from overwriting that zero */
+  if (systemStatus == RUNNING) {
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
@@ -274,6 +295,15 @@ if (systemStatus == RUNNING) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);   // never reverse
   }
+
+  // Finish the smooth stop and return to IDLE once rampedSetpoint has reached ~0
+  if (stopping && rampedSetpoint <= 0.5f) {
+    systemStatus = IDLE;
+    stopping = 0;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+  }
+}
 }
 }
 
@@ -291,10 +321,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     // Pressing the button stops the system if it is RUNNING state
     if (systemStatus == RUNNING) {
       systemStatus = E_STOP;
+    // E-STOP needs to zero the PWM signal  
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
-    // Pressing the button starts the system if it is in IDLE state
+    // Pressing the button starts the system if it is in IDLE state, and resets the ramp/timer state for a fresh run
     else if (systemStatus == IDLE) {
       systemStatus = RUNNING;
+      rampedSetpoint = 0.0f;
+      runStartTick = HAL_GetTick();
+      stopping = 0;
     }
     else {
       // Require a separate press to leave E_STOP - won't jump straight back to RUNNING
