@@ -1,6 +1,6 @@
 #include "buttons.h"
 
-#define DEBOUNCE_TICKS  3
+#define DEBOUNCE_TICKS  2   // TEMPORARY - lowered to work around noisy long breadboard wires; revert to 3 once wiring is fixed
 
 // *** THE CODE BELOW IS USED TO HANDLE 3 BUTTONS (+/- and switch button) IN ISR ***
 

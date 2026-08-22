@@ -48,6 +48,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/buttons.c
     Core/Src/pid.c
     Core/Src/E-STOP.c
+    Core/Src/ssd1306.c
+    Core/Src/display.c
 )
 
 # Add include paths

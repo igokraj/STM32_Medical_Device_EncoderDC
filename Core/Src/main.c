@@ -29,6 +29,8 @@
 #include "pid.h"
 #include "stdbool.h"
 #include "E-STOP.h"
+#include "state.h"
+#include "display.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,19 +58,7 @@ static int32_t prevCount = 0; // previous encoder count, used to compute delta f
 
 volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked
 
-typedef enum {
-  IDLE,
-  RUNNING,
-  E_STOP
-} SystemStatus_t;
-
 volatile SystemStatus_t systemStatus = IDLE;
-
-typedef enum {
-  EDIT_SPEED,
-  EDIT_TIME
-} EditMode_t;
-
 volatile EditMode_t     editMode    = EDIT_SPEED;
 
 // Desired DC motor speed
@@ -83,13 +73,14 @@ volatile int16_t        targetTimeSec = 0;
 #define RAMP_RATE_RPM_PER_S   60.0f // max rate of change of the setpoint (RPM per second)
 static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_Update
 
-static uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
+volatile uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
 volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing down to 0 rpm
 
 // **** SERVO ****
 
-volatile uint32_t ServoStartTick = 0; // variable for servo delay counter 
-volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait it's own delay till it is opened 
+volatile uint32_t ServoStartTick = 0; // variable for servo delay counter
+volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait it's own delay till it is opened
+volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open)
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished it's work? 
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
 
@@ -157,12 +148,16 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
 
+  Display_Init();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+    Display_Update();
 
     /* USER CODE END WHILE */
 
@@ -348,6 +343,7 @@ if (servoPending) {
     0°   → 3000 (1ms)
     90°  → 4500 (1,5ms)
     180° → 6000 (2 ms) */
+    servoLocked = false;
     servoPending = 0;
   }
 }
@@ -377,20 +373,21 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         if (targetRPM != 0 && targetTimeSec != 0) {
         // Lock the servo, and cancel any pending "open" countdown left over from a previous cycle
       __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 4500);
-      servoPending = 0; 
+      servoLocked = true;
+      servoPending = 0;
       systemStatus = RUNNING;
       rampedSetpoint = 0.0f;
       runStartTick = HAL_GetTick();
       stopping = 0;
         }
         else {
-          // User dit not specife desired RPM or work time 
-          //  ******* TUTAJ DODAĆ NAPIS DO OLED'a!!! ********** 
+          // User did not specify desired RPM or work time
+          Display_ShowMessage("SET RPM AND TIME");
         }
     }
     else {
-      // lid is open - just ignore this request 
-      //  ******* TUTAJ DODAĆ NAPIS DO OLED'a!!! ********** 
+      // lid is open - just ignore this request
+      Display_ShowMessage("CLOSE THE LID");
     }
   }
     else {
