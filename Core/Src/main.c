@@ -294,7 +294,7 @@ if (systemStatus == RUNNING) {
 
 
   // Check if the configured run time has elapsed, and if so, start the smooth stop
-  if (!stopping && targetTimeSec > 0) {
+  if (!stopping)  {
     uint32_t elapsedSec = (HAL_GetTick() - runStartTick) / 1000;
     if (elapsedSec >= (uint32_t)targetTimeSec) {
       stopping = 1;
@@ -308,9 +308,7 @@ if (systemStatus == RUNNING) {
   float pidOutput = PID_Compute(rampedSetpoint, rpm);
 
 
-/* Check systemStatus again right before writing to CCR - if EXTI (higher priority
-   than this callback) just fired and switched to E_STOP, it already zeroed CCR;
-   this re-check prevents the write below from overwriting that zero */
+  /* Check systemStatus again right before writing to CCR - if EXTI (higher priority than this callback) just fired and switched to E_STOP, it already zeroed CCR; this re-check prevents the write below from overwriting that zero */
   if (systemStatus == RUNNING) {
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
@@ -376,6 +374,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also lock the machine with servo
     else if (systemStatus == IDLE) {
       if (!lid_open) {
+        if (targetRPM != 0 && targetTimeSec != 0) {
         // Lock the servo, and cancel any pending "open" countdown left over from a previous cycle
       __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 4500);
       servoPending = 0; 
@@ -383,7 +382,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       rampedSetpoint = 0.0f;
       runStartTick = HAL_GetTick();
       stopping = 0;
-
+        }
+        else {
+          // User dit not specife desired RPM or work time 
+          //  ******* TUTAJ DODAĆ NAPIS DO OLED'a!!! ********** 
+        }
     }
     else {
       // lid is open - just ignore this request 
