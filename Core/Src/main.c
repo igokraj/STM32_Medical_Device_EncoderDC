@@ -282,12 +282,11 @@ if (systemStatus == RUNNING) {
   // Compare the rampedSetpoint (goal for right now) with the actual measured speed
   float pidOutput = PID_Compute(rampedSetpoint, rpm);
 
-  // Finish the smooth stop and return to IDLE once rampedSetpoint has reached ~0
-  if (stopping && rampedSetpoint <= 0.5f) {
-    systemStatus = IDLE;
-    stopping = 0;
-  }
 
+/* Check systemStatus again right before writing to CCR - if EXTI (higher priority
+   than this callback) just fired and switched to E_STOP, it already zeroed CCR;
+   this re-check prevents the write below from overwriting that zero */
+  if (systemStatus == RUNNING) {
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
@@ -296,6 +295,15 @@ if (systemStatus == RUNNING) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);   // never reverse
   }
+
+  // Finish the smooth stop and return to IDLE once rampedSetpoint has reached ~0
+  if (stopping && rampedSetpoint <= 0.5f) {
+    systemStatus = IDLE;
+    stopping = 0;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+  }
+}
 }
 }
 
