@@ -51,40 +51,43 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
+// **** ENCODER ****
 volatile uint32_t uwDirection = 0;
 volatile int32_t  iCount = 0;
 volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 
+// **** LID ****
 volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked
 
+// **** SYSTEM STATUS AND EDIT MODE ****
 volatile SystemStatus_t systemStatus = IDLE;
 volatile EditMode_t     editMode    = EDIT_SPEED;
 
+// **** USER DESIRED PARAMETERS ****
 // Desired DC motor speed
 volatile int16_t        targetRPM   = 0;
 // Desired DC motor work time in a single task
 volatile int16_t        targetTimeSec = 0;
 
-
+// **** DC MOTOR ****
 #define MAX_DC_SPEED 330 // Pololu 4752 dataSheet: Rotational speed at 12 V power supply: 330 rpm
 
 // **** PID ramp ****
 #define RAMP_RATE_RPM_PER_S   60.0f // max rate of change of the setpoint (RPM per second)
 static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_Update
 
+// **** TIME-BASED AUTO-STOP ****
 volatile uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
 volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing down to 0 rpm
 
 // **** SERVO ****
-
 volatile uint32_t ServoStartTick = 0; // variable for servo delay counter
-volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait it's own delay till it is opened
+volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait its own delay till it is opened
 volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open)
-#define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished it's work? 
+#define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished its work?
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
-
-
 
 /* USER CODE END PV */
 
@@ -237,11 +240,12 @@ if (htim->Instance == TIM6) {
 }
 
 // **** LID CHECK ****
+
 lid_open = HAL_GPIO_ReadPin(Lid_Button_GPIO_Port, Lid_Button_Pin);
 
-// Set systemStatus to E-STOP and 0 the PWM signal if someone managed to open the lid while the system is RUNNING
+// Set systemStatus to E-STOP and zero the PWM signal if someone managed to open the lid while the system is RUNNING
 if (systemStatus == RUNNING && lid_open) {
-// Inicialize stop of DC motor
+// Initialize stop of DC motor
 TriggerEStop();
 }
 
@@ -333,7 +337,7 @@ if (servoPending) {
   bool timedOut = (now - ServoStartTick >= SERVO_MAX_WAIT); 
   bool motorStopped = (rpm < 1.0f && rpm > -1.0f);
 
-/* Open once the minimum delay has passed AND && either the motor is confirmed stopped, or the max wait timed out (this is an extra protection in case rpm never settles, e.g. sensor noise) */
+/* Open once the minimum delay has passed AND either the motor is confirmed stopped, or the max wait timed out (this is an extra protection in case rpm never settles, e.g. sensor noise) */
   if (now - ServoStartTick >= SERVO_OPEN_DELAY && (motorStopped || timedOut)) {
 
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
@@ -350,8 +354,9 @@ if (servoPending) {
 
 }
 
+// **** SYSTEM STATE MACHINE ****
 
-// This funtion in ISR is used to start of stop the system (and to handle the state machine)
+// This function in ISR is used to start or stop the system (and to handle the state machine)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   static uint32_t last_press = 0;
@@ -362,12 +367,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     if (now - last_press < 200) return;
     last_press = now;
 
-    // Pressing the button stops the system if it is RUNNING state
+    // Pressing the button stops the system if it is in RUNNING state
     if (systemStatus == RUNNING) {
-    // Inicialize stop of DC motor
+    // Initialize stop of DC motor
     TriggerEStop();
     }
-    // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also lock the machine with servo
+    // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also locks the machine with servo
     else if (systemStatus == IDLE) {
       if (!lid_open) {
         if (targetRPM != 0 && targetTimeSec != 0) {
@@ -396,12 +401,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
   }
 }
-
-
-
-
-
-
 
 /* USER CODE END 4 */
 
