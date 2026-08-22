@@ -2,16 +2,7 @@
 
 #include "main.h"
 #include "tim.h"
-
-typedef enum {
-  IDLE,
-  RUNNING,
-  E_STOP
-} SystemStatus_t;
-
-extern volatile SystemStatus_t systemStatus;
-extern volatile uint32_t       ServoStartTick;
-extern volatile uint8_t        servoPending;
+#include "state.h"
 
 void TriggerEStop(void)
 {
