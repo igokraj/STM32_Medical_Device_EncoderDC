@@ -19,10 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
-#include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include "stdbool.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -46,12 +47,14 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
 /* USER CODE BEGIN PV */
 volatile uint32_t uwDirection = 0;
 volatile int32_t  iCount = 0;
 volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 
+volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked
 
 typedef enum {
   IDLE,
@@ -131,6 +134,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_TIM6_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
   /* Start the encoder interface */
@@ -138,10 +142,12 @@ int main(void)
 
   /* Start TIM6 in interrupt mode */
   HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start(&htim3);
 
   /* Start PWM channels for the motor driver (IN1/IN2) */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
 
   /* USER CODE END 2 */
 
@@ -227,6 +233,16 @@ if (htim->Instance == TIM6) {
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
 }
 
+// **** LID CHECK ****
+lid_open = HAL_GPIO_ReadPin(Lid_Button_GPIO_Port, Lid_Button_Pin);
+
+// Set systemStatus to E-STOP and 0 the PWM signal if someone managed to open the lid while the system is RUNNING
+if (systemStatus == RUNNING && lid_open) {
+  systemStatus = E_STOP;
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+}
+
 // **** BUTTONS HANDLE **** 
 
 // Enable the change of the parameters only if the system is in IDLE
@@ -267,6 +283,7 @@ if (Button_Update(&btnMinus)) {
 // **** PWM HANDLE **** 
 
 if (systemStatus == RUNNING) {
+
 
   // Check if the configured run time has elapsed, and if so, start the smooth stop
   if (!stopping && targetTimeSec > 0) {
@@ -327,11 +344,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
     // Pressing the button starts the system if it is in IDLE state, and resets the ramp/timer state for a fresh run
     else if (systemStatus == IDLE) {
+      if (!lid_open) {
       systemStatus = RUNNING;
       rampedSetpoint = 0.0f;
       runStartTick = HAL_GetTick();
       stopping = 0;
     }
+    else {
+      // lid is open - just ignore this request 
+      //  ******* TUTAJ DODAĆ NAPIS DO OLED'a!!! ********** 
+    }
+  }
     else {
       // Require a separate press to leave E_STOP - won't jump straight back to RUNNING
       systemStatus = IDLE;
