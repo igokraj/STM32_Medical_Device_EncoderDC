@@ -28,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include "buttons.h"
 #include "pid.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -82,6 +83,8 @@ static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_U
 
 static uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
 volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing down to 0 rpm
+
+volatile uint8_t printFlag = 0;
 
 
 /* USER CODE END PV */
@@ -150,6 +153,15 @@ int main(void)
   while (1)
   {
 
+    if (printFlag) {
+      printFlag = 0;
+      char buf[100];
+      int len = snprintf(buf, sizeof(buf),
+        "state=%d target=%d ramp=%d rpm=%d stopping=%d\r\n",
+        systemStatus, targetRPM, (int)rampedSetpoint, (int)rpm, stopping);
+      HAL_UART_Transmit(&huart2, (uint8_t*)buf, len, 100);
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -210,6 +222,21 @@ void SystemClock_Config(void)
 #define COUNTS_PER_REV_OUTPUT   1920.0f   //  64 CPR x 30:1 gearbox Pololu datasheet
 #define SAMPLE_TIME_S           0.01f     // 100 Hz from TIM6 -> 0,01 s
 
+#define SIMULATION_MODE   // comment this line out once the real motor is connected
+
+#ifdef SIMULATION_MODE
+static float lastPidOutput = 0.0f;
+
+// Simple first-order motor model driven by the PID output, for testing without hardware
+float SimulateMotor(float pwmDuty)
+{
+  static float simRpm = 0.0f;
+  float targetPhysicalRPM = (pwmDuty / 4199.0f) * MAX_DC_SPEED;
+  simRpm += (targetPhysicalRPM - simRpm) * (SAMPLE_TIME_S / 0.3f); // time constant 0.3s
+  return simRpm;
+}
+#endif
+
 // TIM6 callback (100 Hz) - computes direction, position and motor RPM
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -218,6 +245,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 if (htim->Instance == TIM6) {
 
+  static uint16_t printCounter = 0;
+  printCounter++;
+  if (printCounter >= 20) {   // 20 x 10ms = 200ms
+    printCounter = 0;
+    printFlag = 1;
+  }
+
+#ifdef SIMULATION_MODE
+  rpm = SimulateMotor(lastPidOutput);
+#else
   uwDirection = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2);
   iCount = (int32_t)__HAL_TIM_GET_COUNTER(&htim2) / 4;
 
@@ -225,6 +262,7 @@ if (htim->Instance == TIM6) {
   prevCount = iCount;
 
   rpm = (delta / COUNTS_PER_REV_OUTPUT) * (60.0f / SAMPLE_TIME_S);
+#endif
 }
 
 // **** BUTTONS HANDLE **** 
@@ -282,11 +320,9 @@ if (systemStatus == RUNNING) {
   // Compare the rampedSetpoint (goal for right now) with the actual measured speed
   float pidOutput = PID_Compute(rampedSetpoint, rpm);
 
-  // Finish the smooth stop and return to IDLE once rampedSetpoint has reached ~0
-  if (stopping && rampedSetpoint <= 0.5f) {
-    systemStatus = IDLE;
-    stopping = 0;
-  }
+#ifdef SIMULATION_MODE
+  lastPidOutput = pidOutput;
+#endif
 
   if (pidOutput > 0) {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, (uint32_t)pidOutput);
@@ -295,6 +331,18 @@ if (systemStatus == RUNNING) {
   else {
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);   // never reverse
+  }
+
+  // Finish the smooth stop and return to IDLE once rampedSetpoint has reached ~0
+  // Force PWM to zero here too - leftover integral could otherwise leave a residual nonzero output frozen forever
+  if (stopping && rampedSetpoint <= 0.5f) {
+    systemStatus = IDLE;
+    stopping = 0;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+#ifdef SIMULATION_MODE
+    lastPidOutput = 0.0f;
+#endif
   }
 }
 }
