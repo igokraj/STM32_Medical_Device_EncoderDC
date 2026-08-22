@@ -370,6 +370,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     // E-STOP needs to zero the PWM signal  
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+    ServoStartTick = HAL_GetTick();
+    servoPending = 1;
     }
     // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also lock the machine with servo
     else if (systemStatus == IDLE) {
