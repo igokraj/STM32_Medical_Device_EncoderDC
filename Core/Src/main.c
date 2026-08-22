@@ -19,16 +19,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
-#include "stm32f4xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include "stdbool.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "buttons.h"
 #include "pid.h"
+#include "stdbool.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -85,6 +84,13 @@ static float rampedSetpoint = 0.0f; // current ramped setpoint, output of Ramp_U
 
 static uint32_t runStartTick = 0; // timestamp (HAL_GetTick) of when RUNNING started, used to measure elapsed time
 volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing down to 0 rpm
+
+// **** SERVO ****
+
+volatile uint32_t ServoStartTick = 0; // variable for servo delay counter 
+volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait it's own delay till it is opened 
+#define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished it's work? 
+
 
 
 /* USER CODE END PV */
@@ -241,6 +247,8 @@ if (systemStatus == RUNNING && lid_open) {
   systemStatus = E_STOP;
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+  ServoStartTick = HAL_GetTick();
+  servoPending = 1;
 }
 
 // **** BUTTONS HANDLE **** 
@@ -319,10 +327,31 @@ if (systemStatus == RUNNING) {
     stopping = 0;
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+      ServoStartTick = HAL_GetTick();
+      servoPending = 1;
+    }
   }
 }
+
+// **** SERVO OPEN DELAY ****
+
+// Wait for the set time before opening the lock
+if (servoPending) {
+  uint32_t now = HAL_GetTick();
+  if (now - ServoStartTick >= SERVO_OPEN_DELAY && rpm < 1.0f && rpm > -1.0f) {
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
+    /* PSC=27, ARR=59999
+    tick = 28 / 84 000 000 ≈ 0,333 µs
+    For example: 0,333µs × 3000 = 999µs ≈ 1ms
+    0°   → 3000 (1ms)
+    90°  → 4500 (1,5ms)
+    180° → 6000 (2 ms) */
+    servoPending = 0;
+  }
 }
+
 }
+
 
 // This funtion in ISR is used to start of stop the system (and to handle the state machine)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -342,13 +371,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     }
-    // Pressing the button starts the system if it is in IDLE state, and resets the ramp/timer state for a fresh run
+    // Pressing the button starts the system if it is in IDLE state, resets the ramp/timer state for a fresh run and also lock the machine with servo
     else if (systemStatus == IDLE) {
       if (!lid_open) {
+        // Lock the servo, and cancel any pending "open" countdown left over from a previous cycle
+      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 4500);
+      servoPending = 0; 
       systemStatus = RUNNING;
       rampedSetpoint = 0.0f;
       runStartTick = HAL_GetTick();
       stopping = 0;
+
     }
     else {
       // lid is open - just ignore this request 
