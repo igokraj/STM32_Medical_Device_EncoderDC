@@ -59,7 +59,7 @@ volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 
 // **** LID ****
-volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked -> the value of that variable is checked during the first 10 ms of the porgramm, so value assignment does not matter (however "false" is safer theoretically)
+volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked -> the value of that variable is checked during the first 10 ms of the program, so value assignment does not matter (however "false" is safer theoretically)
 
 // **** SYSTEM STATUS AND EDIT MODE ****
 volatile SystemStatus_t systemStatus = IDLE;
@@ -350,9 +350,9 @@ if (servoPending) {
     /* PSC=27, ARR=59999
     tick = 28 / 84 000 000 ≈ 0,333 µs
     For example: 0,333µs × 3000 = 999µs ≈ 1ms
-    0°   → 3000 (1ms)
-    90°  → 4500 (1,5ms)
-    180° → 6000 (2 ms) */
+    0°   → 3000 (1ms)  = SERVO_PWM_OPEN
+    90°  → 4500 (1,5ms) = unused
+    180° → 6000 (2 ms) = SERVO_PWM_LOCKED */
     servoLocked = false;
     servoPending = 0;
   }

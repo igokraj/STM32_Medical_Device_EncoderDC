@@ -8,8 +8,8 @@
 #define DISPLAY_REFRESH_MS   200    // how often the screen actually redraws
 #define MESSAGE_DURATION_MS  2000   // how long a Display_ShowMessage() stays visible
 
-static char messageText[22] = "";
-static uint32_t messageExpireTick = 0;
+static volatile char messageText[22] = "";
+static volatile uint32_t messageExpireTick = 0;
 
 void Display_Init(void)
 {
@@ -18,8 +18,8 @@ void Display_Init(void)
 
 void Display_ShowMessage(const char *msg)
 {
-  strncpy(messageText, msg, sizeof(messageText) - 1);
-  messageText[sizeof(messageText) - 1] = '\0';
+  strncpy((char *)messageText, msg, sizeof(messageText) - 1);
+  ((char *)messageText)[sizeof(messageText) - 1] = '\0';
   messageExpireTick = HAL_GetTick() + MESSAGE_DURATION_MS;
 }
 
@@ -102,7 +102,7 @@ void Display_Update(void)
   // Row 7: temporary message
   if (HAL_GetTick() < messageExpireTick) {
     SSD1306_SetCursor(0, 7);
-    SSD1306_WriteString(messageText);
+    SSD1306_WriteString((const char *)messageText);
   }
 
   SSD1306_UpdateScreen();

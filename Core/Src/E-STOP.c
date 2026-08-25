@@ -1,4 +1,4 @@
-// **** THIS IS THE FUNCTION TO INICIALIZE STOP OF THE DC MOTOR ****
+// **** THIS IS THE FUNCTION TO INITIALIZE STOP OF THE DC MOTOR ****
 
 #include "main.h"
 #include "tim.h"
