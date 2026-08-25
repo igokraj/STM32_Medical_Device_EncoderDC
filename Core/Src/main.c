@@ -88,6 +88,8 @@ volatile uint8_t servoPending = 0; // flag to notify servo if the machine finish
 volatile bool servoLocked; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished its work?
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
+#define SERVO_PWM_OPEN 3000 // PWM value for open servo lock 
+#define SERVO_PWM_LOCKED 6000 // PWM value for closed servo lock 
 
 /* USER CODE END PV */
 
@@ -152,7 +154,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
 
   // Always start the system with the lock open - never assume the servo's physical position
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_OPEN);
   servoLocked = false;
 
   Display_Init();
@@ -344,7 +346,7 @@ if (servoPending) {
 /* Open once the minimum delay has passed AND either the motor is confirmed stopped, or the max wait timed out (this is an extra protection in case rpm never settles, e.g. sensor noise) */
   if (now - ServoStartTick >= SERVO_OPEN_DELAY && (motorStopped || timedOut)) {
 
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_OPEN);
     /* PSC=27, ARR=59999
     tick = 28 / 84 000 000 ≈ 0,333 µs
     For example: 0,333µs × 3000 = 999µs ≈ 1ms
@@ -381,7 +383,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       if (!lid_open) {
         if (targetRPM != 0 && targetTimeSec != 0) {
         // Lock the servo, and cancel any pending "open" countdown left over from a previous cycle
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 4500);
+      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_LOCKED);
       servoLocked = true;
       servoPending = 0;
       systemStatus = RUNNING;
