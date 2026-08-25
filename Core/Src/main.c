@@ -85,7 +85,7 @@ volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing
 // **** SERVO ****
 volatile uint32_t ServoStartTick = 0; // variable for servo delay counter
 volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait its own delay till it is opened
-volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
+volatile bool servoLocked; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished its work?
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
 
@@ -150,6 +150,10 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+
+  // Always start the system with the lock open - never assume the servo's physical position
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
+  servoLocked = false;
 
   Display_Init();
 
