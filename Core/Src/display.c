@@ -56,7 +56,7 @@ void Display_Update(void)
   snprintf(line, sizeof(line), "RPM   %d/%d", (int)rpm, (int)targetRPM);
   SSD1306_WriteString(line);
 
-  // Row 2: target time, or remaining time while running
+  // Row 2: target time, or remaining time while running - shown as MM:SS
   SSD1306_SetCursor(0, 2);
   if (systemStatus == RUNNING) {
     int32_t elapsedSec = (HAL_GetTick() - runStartTick) / 1000;
@@ -64,9 +64,9 @@ void Display_Update(void)
     if (remainingSec < 0) {
       remainingSec = 0;
     }
-    snprintf(line, sizeof(line), "TIME  left:%ds", (int)remainingSec);
+    snprintf(line, sizeof(line), "TIME  %02d:%02d", (int)(remainingSec / 60), (int)(remainingSec % 60));
   } else {
-    snprintf(line, sizeof(line), "TIME  set:%ds", (int)targetTimeSec);
+    snprintf(line, sizeof(line), "TIME  %02d:%02d", (int)(targetTimeSec / 60), (int)(targetTimeSec % 60));
   }
   SSD1306_WriteString(line);
 
