@@ -59,7 +59,7 @@ volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 
 // **** LID ****
-volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked
+volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked -> the value of that variable is checked during the first 10 ms of the porgramm, so value assignment does not matter (however "false" is safer theoretically)
 
 // **** SYSTEM STATUS AND EDIT MODE ****
 volatile SystemStatus_t systemStatus = IDLE;
@@ -85,7 +85,7 @@ volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing
 // **** SERVO ****
 volatile uint32_t ServoStartTick = 0; // variable for servo delay counter
 volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait its own delay till it is opened
-volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open)
+volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished its work?
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
 
