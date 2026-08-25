@@ -8,8 +8,8 @@
 #define DISPLAY_REFRESH_MS   200    // how often the screen actually redraws
 #define MESSAGE_DURATION_MS  2000   // how long a Display_ShowMessage() stays visible
 
-static char messageText[22] = "";
-static uint32_t messageExpireTick = 0;
+static volatile char messageText[22] = "";
+static volatile uint32_t messageExpireTick = 0;
 
 void Display_Init(void)
 {
@@ -18,8 +18,8 @@ void Display_Init(void)
 
 void Display_ShowMessage(const char *msg)
 {
-  strncpy(messageText, msg, sizeof(messageText) - 1);
-  messageText[sizeof(messageText) - 1] = '\0';
+  strncpy((char *)messageText, msg, sizeof(messageText) - 1);
+  ((char *)messageText)[sizeof(messageText) - 1] = '\0';
   messageExpireTick = HAL_GetTick() + MESSAGE_DURATION_MS;
 }
 
@@ -56,7 +56,7 @@ void Display_Update(void)
   snprintf(line, sizeof(line), "RPM   %d/%d", (int)rpm, (int)targetRPM);
   SSD1306_WriteString(line);
 
-  // Row 2: target time, or remaining time while running
+  // Row 2: target time, or remaining time while running - shown as MM:SS
   SSD1306_SetCursor(0, 2);
   if (systemStatus == RUNNING) {
     int32_t elapsedSec = (HAL_GetTick() - runStartTick) / 1000;
@@ -64,9 +64,9 @@ void Display_Update(void)
     if (remainingSec < 0) {
       remainingSec = 0;
     }
-    snprintf(line, sizeof(line), "TIME  left:%ds", (int)remainingSec);
+    snprintf(line, sizeof(line), "TIME  %02d:%02d", (int)(remainingSec / 60), (int)(remainingSec % 60));
   } else {
-    snprintf(line, sizeof(line), "TIME  set:%ds", (int)targetTimeSec);
+    snprintf(line, sizeof(line), "TIME  %02d:%02d", (int)(targetTimeSec / 60), (int)(targetTimeSec % 60));
   }
   SSD1306_WriteString(line);
 
@@ -102,7 +102,7 @@ void Display_Update(void)
   // Row 7: temporary message
   if (HAL_GetTick() < messageExpireTick) {
     SSD1306_SetCursor(0, 7);
-    SSD1306_WriteString(messageText);
+    SSD1306_WriteString((const char *)messageText);
   }
 
   SSD1306_UpdateScreen();

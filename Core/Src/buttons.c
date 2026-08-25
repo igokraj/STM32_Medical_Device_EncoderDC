@@ -1,44 +1,67 @@
 #include "buttons.h"
 
-#define DEBOUNCE_TICKS  2   // TEMPORARY - lowered to work around noisy long breadboard wires; revert to 3 once wiring is fixed
+#define DEBOUNCE_TICKS  2   // number of consecutive stable samples required before a state change counts
 
-// *** THE CODE BELOW IS USED TO HANDLE 3 BUTTONS (+/- and switch button) IN ISR ***
+// These values are used in mechanism for rapidly increasing the value while holding down the button
+#define HOLD_DELAY_MS 500 // -> How long user needs to hold the button pressed for the mechanism to initialize (button pressed ... 500 ms ... mechanism initialization)
+#define REPEAT_INTERVAL_MS 100 // -> Intervals between value changes while the mechanism is running (100 RPM ... 150 ms ... 200 RPM)
 
-Button_t btnPlus   = { Button_B6_GPIO_Port,     Button_B6_Pin,     GPIO_PIN_SET, 0 };
-Button_t btnMinus  = { Button__GPIO_Port,       Button__Pin,       GPIO_PIN_SET, 0 };
-Button_t btnSwitch = { Switch_Button_GPIO_Port, Switch_Button_Pin, GPIO_PIN_SET, 0 };
 
-/* Returns 1 on a debounced press event (falling edge), else 0 */
+
+// *** THE CODE BELOW IS USED TO HANDLE 3 BUTTONS (+/- and switch button) ***
+
+Button_t btnPlus   = { Button_B6_GPIO_Port,     Button_B6_Pin,     GPIO_PIN_SET, 0, 0, 0 };
+Button_t btnMinus  = { Button__GPIO_Port,       Button__Pin,       GPIO_PIN_SET, 0, 0, 0 };
+Button_t btnSwitch = { Switch_Button_GPIO_Port, Switch_Button_Pin, GPIO_PIN_SET, 0, 0, 0 };
+
+/* Returns 1 on a debounced press event, or on an auto-repeat tick while held, else 0 */
 uint8_t Button_Update(Button_t *btn)
 {
   GPIO_PinState raw = HAL_GPIO_ReadPin(btn->port, btn->pin);
+  uint32_t now = HAL_GetTick();
 
-  // If the reading is the same as last confirmed state, nothing is happening
-  if (raw == btn->stableState)
+  // The reading is changing - it might be a real press/release, or just bouncing
+  if (raw != btn->stableState)
   {
-    btn->counter = 0;
+    btn->counter = btn->counter + 1;
+
+    // Wait until the new reading has been stable for DEBOUNCE_TICKS in a row
+    if (btn->counter >= DEBOUNCE_TICKS)
+    {
+      btn->stableState = raw;
+      btn->counter = 0;
+
+      if (raw == GPIO_PIN_RESET)
+      {
+        // Fresh press - remember when it started, report it right away
+        btn->pressStartTick = now;
+        btn->lastRepeatTick = now;
+        return 1;
+      }
+      else
+      {
+        // Released
+        btn->pressStartTick = 0;
+      }
+    }
     return 0;
   }
 
-  // The reading is different - it might be a real press, or just bouncing
-  btn->counter = btn->counter + 1;
+  // Reading is stable - nothing changing, reset the debounce counter
+  btn->counter = 0;
 
-  // Wait until the new reading has been stable for DEBOUNCE_TICKS in a row
-  if (btn->counter >= DEBOUNCE_TICKS)
+  // Still held down - check whether it's time for an auto-repeat event
+  if (btn->stableState == GPIO_PIN_RESET && btn->pressStartTick != 0)
   {
-    btn->stableState = raw;
-    btn->counter = 0;
-
-    // Only report an event when the button became PRESSED (pin reads LOW)
-    if (raw == GPIO_PIN_RESET)
+    if (now - btn->pressStartTick >= HOLD_DELAY_MS)
     {
-      return 1;
-    }
-    else
-    {
-      return 0;
+      if (now - btn->lastRepeatTick >= REPEAT_INTERVAL_MS)
+      {
+        btn->lastRepeatTick = now;
+        return 1;
+      }
     }
   }
-  // Not stable long enough yet
+
   return 0;
 }

@@ -59,7 +59,7 @@ volatile float rpm = 0.0f;
 static int32_t prevCount = 0; // previous encoder count, used to compute delta for speed calculation
 
 // **** LID ****
-volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked -> the value of that variable is checked during the first 10 ms of the porgramm, so value assignment does not matter (however "false" is safer theoretically)
+volatile bool lid_open = false; // is the lid open or not? true for lid open and false for locked -> the value of that variable is checked during the first 10 ms of the program, so value assignment does not matter (however "false" is safer theoretically)
 
 // **** SYSTEM STATUS AND EDIT MODE ****
 volatile SystemStatus_t systemStatus = IDLE;
@@ -85,9 +85,11 @@ volatile uint8_t stopping = 0; // 0/1 - 1 indicates that the DC motor is slowing
 // **** SERVO ****
 volatile uint32_t ServoStartTick = 0; // variable for servo delay counter
 volatile uint8_t servoPending = 0; // flag to notify servo if the machine finished and servo can now wait its own delay till it is opened
-volatile bool servoLocked = true; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
+volatile bool servoLocked; // current commanded position of the lock servo (true = locked, false = open) -> this is only a flag for OLED display
 #define SERVO_OPEN_DELAY 10000 // How much time must pass for servo to open after the machine finished its work?
 #define SERVO_MAX_WAIT 60000 // Max wait time for the motor to stop; servo opens after this time even if the motor hasn't fully stopped yet
+#define SERVO_PWM_OPEN 3000 // PWM value for open servo lock 
+#define SERVO_PWM_LOCKED 6000 // PWM value for closed servo lock 
 
 /* USER CODE END PV */
 
@@ -150,6 +152,10 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+
+  // Always start the system with the lock open - never assume the servo's physical position
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_OPEN);
+  servoLocked = false;
 
   Display_Init();
 
@@ -261,13 +267,13 @@ if (Button_Update(&btnSwitch)) {
 // Change of the rpm and work time with Button+ and Button-
 if (Button_Update(&btnPlus)) {
   if (editMode == EDIT_SPEED) {
-    if (targetRPM < 330) {
+    if (targetRPM < 6000) {
     targetRPM += 10;
     }
   }
  else {
   if (targetTimeSec < 3600) {
-    targetTimeSec += 10;
+    targetTimeSec += 60;
   }
 }
 }
@@ -278,8 +284,8 @@ if (Button_Update(&btnMinus)) {
     }
   }
   else {
-    if (targetTimeSec >= 10) {
-      targetTimeSec -= 10;
+    if (targetTimeSec >= 60) {
+      targetTimeSec -= 60;
     }
   }
 }
@@ -340,13 +346,13 @@ if (servoPending) {
 /* Open once the minimum delay has passed AND either the motor is confirmed stopped, or the max wait timed out (this is an extra protection in case rpm never settles, e.g. sensor noise) */
   if (now - ServoStartTick >= SERVO_OPEN_DELAY && (motorStopped || timedOut)) {
 
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 3000);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_OPEN);
     /* PSC=27, ARR=59999
     tick = 28 / 84 000 000 ≈ 0,333 µs
     For example: 0,333µs × 3000 = 999µs ≈ 1ms
-    0°   → 3000 (1ms)
-    90°  → 4500 (1,5ms)
-    180° → 6000 (2 ms) */
+    0°   → 3000 (1ms)  = SERVO_PWM_OPEN
+    90°  → 4500 (1,5ms) = unused
+    180° → 6000 (2 ms) = SERVO_PWM_LOCKED */
     servoLocked = false;
     servoPending = 0;
   }
@@ -377,7 +383,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       if (!lid_open) {
         if (targetRPM != 0 && targetTimeSec != 0) {
         // Lock the servo, and cancel any pending "open" countdown left over from a previous cycle
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 4500);
+      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_PWM_LOCKED);
       servoLocked = true;
       servoPending = 0;
       systemStatus = RUNNING;
