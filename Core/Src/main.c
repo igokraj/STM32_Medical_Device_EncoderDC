@@ -261,13 +261,13 @@ if (Button_Update(&btnSwitch)) {
 // Change of the rpm and work time with Button+ and Button-
 if (Button_Update(&btnPlus)) {
   if (editMode == EDIT_SPEED) {
-    if (targetRPM < 330) {
+    if (targetRPM < 6000) {
     targetRPM += 10;
     }
   }
  else {
   if (targetTimeSec < 3600) {
-    targetTimeSec += 10;
+    targetTimeSec += 60;
   }
 }
 }
@@ -278,8 +278,8 @@ if (Button_Update(&btnMinus)) {
     }
   }
   else {
-    if (targetTimeSec >= 10) {
-      targetTimeSec -= 10;
+    if (targetTimeSec >= 60) {
+      targetTimeSec -= 60;
     }
   }
 }
